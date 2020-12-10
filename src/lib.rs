@@ -3,8 +3,11 @@ extern crate vst;
 extern crate vst_gui;
 extern crate serde_json;
 
+use std::sync::{Arc, Mutex};
 use std::include_str;
+
 use vst::api;
+use vst::editor::Editor;
 use vst::buffer::{AudioBuffer, SendEventBuffer};
 use vst::event::{Event, MidiEvent};
 use vst::plugin::{CanDo, HostCallback, Info, Plugin};
@@ -52,14 +55,28 @@ fn create_javascript_callback(
                 return String::new()
             },
             "set" => {
-                let key = tokens.next().unwrap_or("").parse::<u8>();
-                let scaleStr = tokens.next().unwrap_or("").parse::<String>();
-                let scale: Vec<u8> = serde_json::from_str(scaleStr).unwrap();
-
                 let mut locked_key_mapper = key_mapper.lock().unwrap();
+                let key = tokens.next().unwrap_or("").parse::<u8>();
+                match key {
+                    Ok(inner) => {
+                        locked_key_mapper.key = Some(inner);
+                    },
+                    _ => {
+                        locked_key_mapper.key = None;
+                    }
+                }
 
-                locked_key_mapper.key = Some(key);
-                locked_key_mapper.scale = Some(scale);
+                let scale_str = tokens.next().unwrap_or("").parse::<String>();
+                match scale_str {
+                    Ok(inner) => {
+                        let scale: Vec<u8> = serde_json::from_str(inner.as_str()).unwrap();
+                        locked_key_mapper.scale = Some(scale);
+                    },
+                    _ => {
+                        locked_key_mapper.scale = None;
+                    }
+                }
+                
                 return String::new()
             },
             _ => {}
@@ -69,12 +86,29 @@ fn create_javascript_callback(
     })
 }
 
-#[derive(Default)]
 struct MyPlugin {
     host: HostCallback,
     events: Vec<MidiEvent>,
     send_buffer: SendEventBuffer,
     key_mapper: Arc<Mutex<KeyMapper>>
+}
+
+impl Default for MyPlugin {
+    fn default() -> MyPlugin {
+        let key_mapper = Arc::new(Mutex::new(
+            KeyMapper {
+                key: None,
+                scale: None,
+            }
+        ));
+
+        MyPlugin {
+            host: HostCallback::default(),
+            events: [].to_vec(),
+            send_buffer: SendEventBuffer::default(),
+            key_mapper: key_mapper.clone(),
+        }
+    }
 }
 
 impl MyPlugin {
@@ -110,7 +144,7 @@ impl Plugin for MyPlugin {
             #[allow(clippy::single_match)]
             match e {
                 Event::Midi(mut e) => {
-                    let locked_key_mapper = self.key_mapper.lock().unwrap();
+                    let mut locked_key_mapper = self.key_mapper.lock().unwrap();
                     let new_key: Option<u8> = locked_key_mapper.transpose_pressed_key(e.data[1]);
                     match new_key {
                         Some(inner) => {

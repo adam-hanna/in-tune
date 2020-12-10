@@ -1,5 +1,5 @@
 /target
 
-/Plugin.vst
+*.vst
 
 *.tar.gz
