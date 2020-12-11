@@ -1,11 +1,14 @@
-#[macro_use]
-extern crate vst;
-extern crate vst_gui;
+#[macro_use] extern crate vst;
+#[macro_use] extern crate log;
+extern crate simplelog;
 extern crate serde_json;
+extern crate vst_gui;
 
 use std::sync::{Arc, Mutex};
+use std::fs::File;
 use std::include_str;
 
+use simplelog::*;
 use vst::api;
 use vst::editor::Editor;
 use vst::buffer::{AudioBuffer, SendEventBuffer};
@@ -27,15 +30,16 @@ impl KeyMapper {
             return Some(pressed_key);
         }
 
-        let remainder = pressed_key%12 - self.key.unwrap()%12;
-        if remainder as u8 > self.scale.as_ref().unwrap().len() as u8 {
+        let dist_from_root = pressed_key%12;
+        if dist_from_root as u8 > self.scale.as_ref().unwrap().len() as u8 {
             return None;
         }
+        let offset: u8 = self.scale.as_ref().unwrap()[dist_from_root as usize];
 
-        let offset: u8 = self.scale.as_ref().unwrap()[remainder as usize];
-        let base = pressed_key as i8/12 - self.key.unwrap() as i8/12;
+        let octave = pressed_key/12;
+        let delta_key = self.key.as_ref().unwrap() - 12;
 
-        Some((self.key.unwrap() as i8 + base*12 + offset as i8) as u8) 
+        Some((12*octave)+delta_key + offset)
     }
 }
 
@@ -43,6 +47,7 @@ fn create_javascript_callback(
     key_mapper: Arc<Mutex<KeyMapper>>) -> vst_gui::JavascriptCallback
 {
     Box::new(move |message: String| {
+        info!("message: {}", message);
         let mut tokens = message.split_whitespace();
 
         let command = tokens.next().unwrap_or("");
@@ -59,6 +64,7 @@ fn create_javascript_callback(
                 let key = tokens.next().unwrap_or("").parse::<u8>();
                 match key {
                     Ok(inner) => {
+                        info!("inner key: {}", inner);
                         locked_key_mapper.key = Some(inner);
                     },
                     _ => {
@@ -69,7 +75,9 @@ fn create_javascript_callback(
                 let scale_str = tokens.next().unwrap_or("").parse::<String>();
                 match scale_str {
                     Ok(inner) => {
+                        info!("inner scale: {}", inner);
                         let scale: Vec<u8> = serde_json::from_str(inner.as_str()).unwrap();
+                        info!("scale: {:?}", scale);
                         locked_key_mapper.scale = Some(scale);
                     },
                     _ => {
@@ -120,6 +128,16 @@ impl MyPlugin {
 
 impl Plugin for MyPlugin {
     fn new(host: HostCallback) -> Self {
+        let logger_config = Config::default();
+        CombinedLogger::init(vec![WriteLogger::new(
+            LevelFilter::max(),
+            logger_config,
+            File::create("/tmp/plugin.log").unwrap(),
+        )])
+        .unwrap();
+        info!("====================================================================");
+        info!("Plugin::new()");
+
         let mut p = MyPlugin::default();
         p.host = host;
         p
@@ -144,6 +162,7 @@ impl Plugin for MyPlugin {
                 Event::Midi(mut e) => {
                     let mut locked_key_mapper = self.key_mapper.lock().unwrap();
                     let new_key: Option<u8> = locked_key_mapper.transpose_pressed_key(e.data[1]);
+                    info!("old key: {}; new key: {:?}", e.data[1], new_key);
                     match new_key {
                         Some(inner) => {
                             e.data[1] = inner;
