@@ -129,8 +129,6 @@ impl Plugin for MyPlugin {
         Info {
             name: "in_tune".to_string(),
             unique_id: 7357001, // Used by hosts to differentiate between plugins.
-            inputs: 2,
-            outputs: 2,
             midi_inputs: 1,
             midi_outputs: 1,
             parameters: 0,
@@ -190,7 +188,7 @@ impl Plugin for MyPlugin {
         use vst::plugin::CanDo::*;
 
         match can_do {
-            SendEvents | SendMidiEvent | ReceiveEvents | ReceiveMidiEvent => Yes,
+            SendMidiEvent | ReceiveMidiEvent => Yes,
             _ => No,
         }
     }
