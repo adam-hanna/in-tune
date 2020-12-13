@@ -7,39 +7,73 @@ extern crate vst_gui;
 use std::sync::{Arc, Mutex};
 use std::fs::File;
 use std::include_str;
+use std::collections::HashMap;
+use std::panic;
 
 use simplelog::*;
 use vst::api;
 use vst::editor::Editor;
 use vst::buffer::{AudioBuffer, SendEventBuffer};
 use vst::event::{Event, MidiEvent};
-use vst::plugin::{CanDo, HostCallback, Info, Plugin};
+use vst::plugin::{CanDo, Category, HostCallback, Info, Plugin};
 
 plugin_main!(MyPlugin); // Important!
 
 const HTML: &'static str = include_str!("../ui/build/index.html");
 
 struct KeyMapper {
-    key: Option<u8>,
-    scale: Option<Vec<u8>>,
+    key: Arc<Mutex<u8>>,
+    scale: Arc<Mutex<Vec<u8>>>,
+    keys_on_map: Arc<Mutex<HashMap<u8, u8>>>, // note: map is pressed_key -> transposed_key
 }
 
 impl KeyMapper {
-    fn transpose_pressed_key(&mut self, pressed_key: u8) -> Option<u8> {
-        if !self.key.is_some() || !self.scale.is_some() {
+    fn transpose_pressed_key(&mut self, data: [u8; 3]) -> Option<u8> {
+        let pressed_key = data[1];
+        let command = data[0];
+
+        let locked_key = self.key.lock().unwrap();
+        let locked_scale = self.scale.lock().unwrap();
+
+        if locked_scale.len() == 0 {
             return Some(pressed_key);
         }
 
-        let dist_from_root = pressed_key%12;
-        if dist_from_root as u8 > self.scale.as_ref().unwrap().len() as u8 {
-            return None;
+        match command {
+            144 => {
+                // 144 is NOTE_ON
+                let dist_from_root = pressed_key%12;
+                if dist_from_root as u8 >= locked_scale.len() as u8 {
+                    return None;
+                }
+                let offset: u8 = locked_scale[dist_from_root as usize];
+
+                let octave = pressed_key/12;
+                let delta_key = *locked_key - 12;
+
+                let new_key = (12*octave)+delta_key + offset;
+                
+                let mut locked_keys_on_map = self.keys_on_map.lock().unwrap();
+                locked_keys_on_map.insert(pressed_key, new_key);
+
+                Some(new_key)
+            },
+            128 => {
+                // 128 is NOTE_OFF
+                let locked_keys_on_map = self.keys_on_map.lock().unwrap();
+                match locked_keys_on_map.get(&pressed_key) {
+                    Some(mapped_key) => {
+                        return Some(*mapped_key);
+                    },
+                    None => {
+                        return None;
+                    },
+                }
+            },
+            _ => {
+                return None;
+            },
         }
-        let offset: u8 = self.scale.as_ref().unwrap()[dist_from_root as usize];
-
-        let octave = pressed_key/12;
-        let delta_key = self.key.as_ref().unwrap() - 12;
-
-        Some((12*octave)+delta_key + offset)
     }
 }
 
@@ -53,22 +87,27 @@ fn create_javascript_callback(
         let command = tokens.next().unwrap_or("");
         match command {
             "stop" => {
-                let mut locked_key_mapper = key_mapper.lock().unwrap();
-                locked_key_mapper.key = None;
-                locked_key_mapper.scale = None;
+                let locked_key_mapper = key_mapper.lock().unwrap();
+                let mut locked_key = locked_key_mapper.key.lock().unwrap();
+                let mut locked_scale = locked_key_mapper.scale.lock().unwrap();
+
+                *locked_key = 0;
+                locked_scale.clear();
 
                 return String::new()
             },
             "set" => {
-                let mut locked_key_mapper = key_mapper.lock().unwrap();
+                let locked_key_mapper = key_mapper.lock().unwrap();
+                let mut locked_key = locked_key_mapper.key.lock().unwrap();
+                let mut locked_scale = locked_key_mapper.scale.lock().unwrap();
                 let key = tokens.next().unwrap_or("").parse::<u8>();
                 match key {
                     Ok(inner) => {
                         info!("inner key: {}", inner);
-                        locked_key_mapper.key = Some(inner);
+                        *locked_key = inner;
                     },
                     _ => {
-                        locked_key_mapper.key = None;
+                        *locked_key = 0;
                     }
                 }
 
@@ -78,10 +117,10 @@ fn create_javascript_callback(
                         info!("inner scale: {}", inner);
                         let scale: Vec<u8> = serde_json::from_str(inner.as_str()).unwrap();
                         info!("scale: {:?}", scale);
-                        locked_key_mapper.scale = Some(scale);
+                        *locked_scale = scale;
                     },
                     _ => {
-                        locked_key_mapper.scale = None;
+                        locked_scale.clear();
                     }
                 }
                 
@@ -96,23 +135,30 @@ fn create_javascript_callback(
 
 struct MyPlugin {
     host: HostCallback,
-    events: Vec<MidiEvent>,
+    events: Arc<Mutex<Vec<MidiEvent>>>,
     send_buffer: SendEventBuffer,
     key_mapper: Arc<Mutex<KeyMapper>>
 }
 
 impl Default for MyPlugin {
     fn default() -> MyPlugin {
+        info!("Default");
+        let keys_on_map = Arc::new(Mutex::new(HashMap::new()));
+        let key = Arc::new(Mutex::new(0));
+        let scale = Arc::new(Mutex::new([].to_vec()));
         let key_mapper = Arc::new(Mutex::new(
             KeyMapper {
-                key: None,
-                scale: None,
+                key: key.clone(),
+                scale: scale.clone(),
+                keys_on_map: keys_on_map.clone(),
             }
         ));
 
+        let events_vec = Arc::new(Mutex::new([].to_vec()));
+
         MyPlugin {
             host: HostCallback::default(),
-            events: [].to_vec(),
+            events: events_vec.clone(),
             send_buffer: SendEventBuffer::default(),
             key_mapper: key_mapper.clone(),
         }
@@ -121,8 +167,10 @@ impl Default for MyPlugin {
 
 impl MyPlugin {
     fn send_midi(&mut self) {
-        self.send_buffer.send_events(&self.events, &mut self.host);
-        self.events.clear();
+        let mut locked_events = self.events.lock().unwrap();
+
+        self.send_buffer.send_events(&*locked_events, &mut self.host);
+        locked_events.clear();
     }
 }
 
@@ -147,6 +195,7 @@ impl Plugin for MyPlugin {
         Info {
             name: "in_tune".to_string(),
             unique_id: 7357001, // Used by hosts to differentiate between plugins.
+            category: Category::Synth,
             midi_inputs: 1,
             midi_outputs: 1,
             parameters: 0,
@@ -156,23 +205,50 @@ impl Plugin for MyPlugin {
     }
 
     fn process_events(&mut self, events: &api::Events) {
-        for e in events.events() {
-            #[allow(clippy::single_match)]
-            match e {
-                Event::Midi(mut e) => {
-                    let mut locked_key_mapper = self.key_mapper.lock().unwrap();
-                    let new_key: Option<u8> = locked_key_mapper.transpose_pressed_key(e.data[1]);
-                    info!("old key: {}; new key: {:?}", e.data[1], new_key);
-                    match new_key {
-                        Some(inner) => {
-                            e.data[1] = inner;
-                            self.events.push(e)
-                        },
-                        _ => (),
-                    };
-                },
-                _ => (),
+        let result = panic::catch_unwind(|| {
+            for e in events.events() {
+                #[allow(clippy::single_match)]
+                match e {
+                    Event::Midi(mut e) => {
+                        let mut locked_key_mapper = self.key_mapper.lock().unwrap();
+                        let new_key: Option<u8> = locked_key_mapper.transpose_pressed_key(e.data);
+                        info!("old key: {}; new key: {:?}", e.data[1], new_key);
+                        match new_key {
+                            Some(inner) => {
+                                info!("sending {}", inner);
+                                e.data[1] = inner;
+
+                                let mut locked_events = self.events.lock().unwrap();
+                                locked_events.push(e)
+                            },
+                            _ => {
+                                /*
+                                info!("sending key off");
+                                e.data[0] = 128; // note: KEY_OFF
+
+                                let mut locked_events = self.events.lock().unwrap();
+                                locked_events.push(e)
+                                */
+                            },
+                        };
+                    },
+                    _ => (),
+                }
             }
+        });
+
+        match result {
+            Err(panic) => {
+                match panic.downcast::<String>() {
+                    Ok(panic_msg) => {
+                        error!("panic happened: {}", panic_msg);
+                    }
+                    Err(_) => {
+                        error!("panic happened: unknown type.");
+                    }
+                }
+            },
+            _ => ()
         }
     }
 
@@ -191,6 +267,7 @@ impl Plugin for MyPlugin {
                 *out_sample = *in_sample;
             }
         }
+        
         self.send_midi();
     }
     
@@ -198,7 +275,7 @@ impl Plugin for MyPlugin {
         let gui = vst_gui::new_plugin_gui(
             String::from(HTML),
             create_javascript_callback(self.key_mapper.clone()),
-            Some((1500, 800)));
+            Some((1250, 500)));
         Some(Box::new(gui))
     }
 
