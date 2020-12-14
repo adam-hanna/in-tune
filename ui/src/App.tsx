@@ -169,7 +169,7 @@ function App() {
         const tmpInterval = setInterval(() => {
           const deltaMS = new Date().getTime() - tmpTime
           const quotient = deltaMS / msPerBar
-          const tmpCurrentBar = Math.floor(deltaMS / msPerBar)
+          const tmpCurrentBar = Math.round(quotient)
           setCurrentBar(tmpCurrentBar%bars.length)
         }, msPerBar)
         setIntrvl(tmpInterval)
@@ -198,13 +198,16 @@ function App() {
   useEffect(() => {
     setLeft(0)
     setTransitionTime(0)
-    setTop((currentRow) * 212.5 + 62.5)
+    setTop((currentRow) * 219.5 + 62.5)
   }, [currentRow])
 
   useEffect(() => {
     if (left === 0 && icon === 'stop') {
       const numRows = Math.ceil(bars.length / 4)
-      const numBarsInCurrentRow = (currentRow + 1) !== numRows ? 4 : bars.length % 4;
+      let numBarsInCurrentRow = (currentRow + 1) !== numRows ? 4 : bars.length % 4;
+      if (numBarsInCurrentRow === 0) {
+        numBarsInCurrentRow = 4
+      }
       
       // note: 300px per bar
       setLeft(numBarsInCurrentRow * 300)
