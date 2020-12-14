@@ -37,19 +37,25 @@ const TemposWrapper = styled.div`
   display: flex;
   flex-direction: column;
 `
-
+type CurrentLocationMarkerProps = {
+  left: string;
+  top: string;
+  transitionDuration: string;
+}
 const CurrentLocationMarker = styled.div`
   position: absolute;
 
   height: 120px;
   width: 5px;
 
+  left: ${(props: CurrentLocationMarkerProps) => props.left};
+  top: ${(props: CurrentLocationMarkerProps) => props.top};
+
   background-color: red;
 
-  /*
   transition-property: left;
-  transition-duration: 50ms;
-  */
+  transition-duration: ${(props: CurrentLocationMarkerProps) => props.transitionDuration};
+  transition-timing-function: linear;
 `
 
 type BarState = {
@@ -112,13 +118,18 @@ function App() {
   );
   const [tempo, setTempo] = useState(108)
   const [beatsPerBar, setBeatsPerBar] = useState(4)
+  const [msPerBeat, setMSPerBeat] = useState(0)
+  const [msPerBar, setMSPerBar] = useState(0)
+
   const [icon, setIcon] = useState('play')
-  const [currentMS, setCurrentMS] = useState(0)
   const [intrvl, setIntrvl] = useState(0)
   const [startTime, setStartTime] = useState(0)
   const [top, setTop] = useState(62.5)
   const [left, setLeft] = useState(0)
+  const [transitionTime, setTransitionTime] = useState(0)
+  
   const [currentBar, setCurrentBar] = useState(0)
+  const [currentRow, setCurrentRow] = useState(0)
 
   const handleKeyChange = (idx: number, data: string) => {
     dispatch({ idx, type: 'CHANGE_KEY', data });
@@ -128,13 +139,22 @@ function App() {
   };
 
   useEffect(() => {
+    const tmpMSPerBeat = (60 * 1000) / tempo
+    const tmpMSPerBar = tmpMSPerBeat * beatsPerBar
+
+    setMSPerBeat(tmpMSPerBeat)
+    setMSPerBar(tmpMSPerBar)
+  }, [tempo, beatsPerBar])
+
+  useEffect(() => {
     if (icon === 'play') {
       clearInterval(intrvl)
       setStartTime(0)
-      setCurrentMS(0)
       setCurrentBar(-1)
+      setCurrentRow(0)
       setLeft(0)
       setTop(62.5)
+      setTransitionTime(0)
 
       if (NODE_ENV === 'production') {
         // @ts-ignore
@@ -142,37 +162,55 @@ function App() {
         external.invoke(`stop`)
       }
     } else {
-      setCurrentMS(0)
+      setCurrentBar(0)
       const t = new Date().getTime()
       setStartTime(t)
       ;((tmpTime) => {
         const tmpInterval = setInterval(() => {
-          setCurrentMS(new Date().getTime() - tmpTime)
-        }, 50)
+          const deltaMS = new Date().getTime() - tmpTime
+          const quotient = deltaMS / msPerBar
+          const tmpCurrentBar = Math.floor(deltaMS / msPerBar)
+          setCurrentBar(tmpCurrentBar%bars.length)
+        }, msPerBar)
         setIntrvl(tmpInterval)
       })(t);
     }
   }, [icon])
 
   useEffect(() => {
-    //console.log(`currentMS: ${currentMS}`)
-    if (currentMS === 0) {
+    if (currentBar < 0) {
       setLeft(0)
+      setTransitionTime(0)
       setTop(62.5)
 
     } else {
-      const msPerBeat = (60 * 1000) / tempo
-      const numBeats = currentMS / msPerBeat
-      const barNumber = Math.floor(numBeats / beatsPerBar)
-      const tmpCurrentBar = barNumber % bars.length
-      setCurrentBar(tmpCurrentBar)
+      if (currentBar === 0) {
+        setLeft(0)
+        setTransitionTime(0)
+      }
 
       // note: 4 bars per line
-      // note: 300px per bar
-      setLeft((tmpCurrentBar % 4) * 300 + (numBeats % beatsPerBar) * (300 / beatsPerBar))
-      setTop(Math.floor(tmpCurrentBar / 4) * 212.5 + 62.5)
+      const tmpCurrentRow = Math.floor(currentBar / 4)
+      setCurrentRow(tmpCurrentRow)
     }
-  }, [currentMS])
+  }, [currentBar])
+
+  useEffect(() => {
+    setLeft(0)
+    setTransitionTime(0)
+    setTop((currentRow) * 212.5 + 62.5)
+  }, [currentRow])
+
+  useEffect(() => {
+    if (left === 0 && icon === 'stop') {
+      const numRows = Math.ceil(bars.length / 4)
+      const numBarsInCurrentRow = (currentRow + 1) !== numRows ? 4 : bars.length % 4;
+      
+      // note: 300px per bar
+      setLeft(numBarsInCurrentRow * 300)
+      setTransitionTime(msPerBar*numBarsInCurrentRow)
+    }
+  }, [left, icon])
 
   useEffect(() => {
     console.log(`currentBar: ${currentBar}`)
@@ -231,10 +269,9 @@ function App() {
       </InputsWrapper>
       <BarsWrapper>
         <CurrentLocationMarker 
-            style={{
-              top: `${top}px`,
-              left: `${left}px`,
-            }}
+            top={`${top}px`}
+            left={`${left}px`}
+            transitionDuration={`${transitionTime}ms`}
         />
         {(bars as BarState[]).map((bar, idx) => (
           <BarAndSelectors
