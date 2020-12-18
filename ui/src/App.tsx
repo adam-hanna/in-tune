@@ -1,19 +1,45 @@
 import React, { useState, useReducer, useEffect } from 'react';
 import 'semantic-ui-css/semantic.min.css'
-import { Button, Input, Icon } from 'semantic-ui-react'
+import { Button, Input, Icon, Modal } from 'semantic-ui-react'
 import styled from 'styled-components'
 import { ScaleType, Interval } from "@tonaljs/tonal"
 
 import './App.css';
 import { BarAndSelectors } from './Components/BarAndSelectors'
 import { KeysToRootNoteMap } from './Keys'
+import { ScaleSelector } from './Components/Selectors/Scales'
 
 const { NODE_ENV } = process.env
+
+interface HTMLInputEvent extends Event {
+    target: HTMLInputElement & EventTarget;
+}
 
 const Wrapper = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+`
+
+const HeaderWrapper = styled.div`
+  width: 100%;
+  
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+`
+
+const ControlsWrapper = styled.div`
+  display: flex;
+  flex-direction: row;
+
+  margin-bottom: 10px;
+`
+
+const SaveLoadWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
 `
 
 const BarsWrapper = styled.div`
@@ -98,6 +124,20 @@ const barReducer: BarReducerFn = (state, action) => {
         return bar
       })
 
+    case "CHANGE_ALL_SCALES":
+      return state.map((bar) => {
+        return { ...bar, scale: action.data }
+      })
+
+    case "SET_BARS":
+      try {
+        const newBars = JSON.parse(action.data)
+        return [ ...newBars ]
+      } catch(e) {
+        console.error('err processing data', action.data, e)
+        return [ ...state ]
+      }
+
     case "ADD_BAR":
       return [...state, { musicKey: "C", scale: "major" }]
 
@@ -130,6 +170,9 @@ function App() {
   
   const [currentBar, setCurrentBar] = useState(0)
   const [currentRow, setCurrentRow] = useState(0)
+
+  const [scaleModal, setScaleModal] = useState(false)
+  const [scale, setScale] = useState('Major')
 
   const handleKeyChange = (idx: number, data: string) => {
     dispatch({ idx, type: 'CHANGE_KEY', data });
@@ -237,39 +280,171 @@ function App() {
 
   return (
     <Wrapper className="App">
-      <InputsWrapper>
-        <TemposWrapper>
-          <Input
-            disabled={icon === 'stop'}
-            label='Tempo (BPM)'
-            value={tempo}
-            onChange={e => {
-              setTempo(Number(e.currentTarget.value))
+      <Modal
+        onClose={() => setScaleModal(false)}
+        onOpen={() => setScaleModal(true)}
+        open={scaleModal}
+      >
+        <Modal.Header>Select a Scale</Modal.Header>
+        <Modal.Content>
+          <Modal.Description>
+            <ScaleSelector
+              disable={false}
+              value={scale}
+              onChange={setScale}
+            />
+          </Modal.Description>
+        </Modal.Content>
+        <Modal.Actions>
+          <Button color='black' onClick={() => setScaleModal(false)}>
+            Cancel
+          </Button>
+          <Button
+            content="Set Scale"
+            labelPosition='right'
+            icon='checkmark'
+            onClick={() => {
+              dispatch({ idx: -1, type: 'CHANGE_ALL_SCALES', data: scale })
+              setScaleModal(false)
             }}
+            positive
           />
-          <Input
-            disabled={icon === 'stop'}
-            label='Beats per Bar'
-            value={beatsPerBar}
-            onChange={e => {
-              setBeatsPerBar(Number(e.currentTarget.value))
+        </Modal.Actions>
+      </Modal>
+      <HeaderWrapper>
+        <ControlsWrapper>
+          <SaveLoadWrapper>
+            <Button 
+              icon='download' 
+              title="save" 
+              onClick={() => {
+                const textToWrite = JSON.stringify(bars)
+                const textFileAsBlob = new Blob([ textToWrite ], { type: 'text/plain' })
+                const fileNameToSaveAs = "bars.json"
+
+                const downloadLink = document.createElement("a")
+                downloadLink.download = fileNameToSaveAs
+                downloadLink.innerHTML = "Download File"
+                if (window.webkitURL != null) {
+                  // Chrome allows the link to be clicked without actually adding it to the DOM.
+                  downloadLink.href = window.webkitURL.createObjectURL(textFileAsBlob)
+                } else {
+                  // Firefox requires the link to be added to the DOM before it can be clicked.
+                  downloadLink.href = window.URL.createObjectURL(textFileAsBlob)
+                  downloadLink.onclick = () => {
+                    document.body.removeChild(downloadLink)
+                  }
+                  downloadLink.style.display = "none"
+                  document.body.appendChild(downloadLink)
+                }
+
+                downloadLink.click()
+              }}
+            />
+            {/*
+            <input 
+              id="file-input" 
+              type="file" 
+              name="name" 
+              style={{ display: "none" }} 
+              onchange={(e: HTMLInputEvent) => {
+                if (!e || !e.target || !e.target.files || e.target.files.length === 0) {
+                  return
+                }
+
+                const selectedFile = e.target.files[0];
+                const reader = new FileReader();
+
+                reader.onload = function(event) {
+                  if (!event || !event.target) {
+                    return
+                  }
+                  dispatch({ idx: -1, type: 'SET_BARS', data: String(event.target.result) })
+                };
+
+                reader.readAsText(selectedFile);
+              }}
+            />
+            */}
+            <Button 
+              icon='upload' 
+              title="load" 
+              onClick={() => {
+                console.log('upload clicked')
+                //document.getElementById('file-input')?.click()
+                const downloadLink = document.createElement("input")
+                downloadLink.type = "file"
+                // @ts-ignore
+                downloadLink.onchange = (e: HTMLInputEvent) => {
+                  if (!e || !e.target || !e.target.files || e.target.files.length === 0) {
+                    return
+                  }
+
+                  const selectedFile = e.target.files[0];
+                  const reader = new FileReader();
+
+                  reader.onload = function(event) {
+                    if (!event || !event.target) {
+                      return
+                    }
+                    dispatch({ idx: -1, type: 'SET_BARS', data: String(event.target.result) })
+                  };
+
+                  reader.readAsText(selectedFile);
+                }
+
+                downloadLink.innerHTML = "Upload File"
+                if (window.webkitURL != null) {
+                  // Chrome allows the link to be clicked without actually adding it to the DOM.
+                } else {
+                  // Firefox requires the link to be added to the DOM before it can be clicked.
+                  downloadLink.onclick = () => {
+                    document.body.removeChild(downloadLink)
+                  }
+                  downloadLink.style.display = "none"
+                  document.body.appendChild(downloadLink)
+                }
+
+                downloadLink.click()
+              }}
+            />
+          </SaveLoadWrapper>
+          <Button secondary onClick={() => { setScaleModal(true) }}>Set All Scales</Button>
+        </ControlsWrapper>
+        <InputsWrapper>
+          <TemposWrapper>
+            <Input
+              disabled={icon === 'stop'}
+              label='Tempo (BPM)'
+              value={tempo}
+              onChange={e => {
+                setTempo(Number(e.currentTarget.value))
+              }}
+            />
+            <Input
+              disabled={icon === 'stop'}
+              label='Beats per Bar'
+              value={beatsPerBar}
+              onChange={e => {
+                setBeatsPerBar(Number(e.currentTarget.value))
+              }}
+            />
+          </TemposWrapper>
+          <Icon 
+            // @ts-ignore
+            name={icon} 
+            size='huge' 
+            onClick={() => {
+              if (icon === 'play') {
+                setIcon('stop')
+              } else {
+                setIcon('play')
+              }
             }}
+            style={{ cursor: 'pointer' }} 
           />
-        </TemposWrapper>
-        <Icon 
-          // @ts-ignore
-          name={icon} 
-          size='huge' 
-          onClick={() => {
-            if (icon === 'play') {
-              setIcon('stop')
-            } else {
-              setIcon('play')
-            }
-          }}
-          style={{ cursor: 'pointer' }} 
-        />
-      </InputsWrapper>
+        </InputsWrapper>
+      </HeaderWrapper>
       <BarsWrapper>
         <CurrentLocationMarker 
             top={`${top}px`}
