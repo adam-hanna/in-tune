@@ -17,6 +17,7 @@ const Wrapper = styled.div`
 `
 
 export type BarProps = {
+  isActive: boolean;
   hasClef: boolean;
   hasRepeat: boolean;
   showRemoveIcon: boolean;
@@ -24,6 +25,7 @@ export type BarProps = {
 }
 
 export const Bar = ({
+  isActive,
   hasClef,
   hasRepeat,
   showRemoveIcon,
@@ -38,7 +40,7 @@ export const Bar = ({
       onMouseLeave={() => setHovered(false)} 
     >
       {hasClef && <ClefSVG style={{ position: 'absolute', left: '10px', top: '0px', height: '150px' }} />}
-      <BarSVG style={{ width: '300px', height: '100px' }} />
+      <BarSVG style={{ width: '300px', height: '100px', backgroundColor: `rgba(255, 255, 0, ${isActive ? 1 : 0})`, transition: 'background-color 0.25s ease-in-out' }} />
       {hasRepeat && <RepeatSVG style={{ position: 'absolute', right: '-20px', height: '100px' }} />}
       {hovered && showRemoveIcon && <Icon style={{ position: 'absolute', color: 'red', fontSize: '50px', left: '125px', top: '52.5px' }} name='remove circle' />}
     </Wrapper>

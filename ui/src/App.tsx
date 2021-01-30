@@ -63,26 +63,6 @@ const TemposWrapper = styled.div`
   display: flex;
   flex-direction: column;
 `
-type CurrentLocationMarkerProps = {
-  left: string;
-  top: string;
-  transitionDuration: string;
-}
-const CurrentLocationMarker = styled.div`
-  position: absolute;
-
-  height: 120px;
-  width: 5px;
-
-  left: ${(props: CurrentLocationMarkerProps) => props.left};
-  top: ${(props: CurrentLocationMarkerProps) => props.top};
-
-  background-color: red;
-
-  transition-property: left;
-  transition-duration: ${(props: CurrentLocationMarkerProps) => props.transitionDuration};
-  transition-timing-function: linear;
-`
 
 type BarState = {
   musicKey: string;
@@ -158,18 +138,12 @@ function App() {
   );
   const [tempo, setTempo] = useState(108)
   const [beatsPerBar, setBeatsPerBar] = useState(4)
-  const [msPerBeat, setMSPerBeat] = useState(0)
   const [msPerBar, setMSPerBar] = useState(0)
 
   const [icon, setIcon] = useState('play')
   const [intrvl, setIntrvl] = useState(0)
-  const [startTime, setStartTime] = useState(0)
-  const [top, setTop] = useState(62.5)
-  const [left, setLeft] = useState(0)
-  const [transitionTime, setTransitionTime] = useState(0)
   
   const [currentBar, setCurrentBar] = useState(0)
-  const [currentRow, setCurrentRow] = useState(0)
 
   const [scaleModal, setScaleModal] = useState(false)
   const [scale, setScale] = useState('Major')
@@ -185,19 +159,13 @@ function App() {
     const tmpMSPerBeat = (60 * 1000) / tempo
     const tmpMSPerBar = tmpMSPerBeat * beatsPerBar
 
-    setMSPerBeat(tmpMSPerBeat)
     setMSPerBar(tmpMSPerBar)
   }, [tempo, beatsPerBar])
 
   useEffect(() => {
     if (icon === 'play') {
       clearInterval(intrvl)
-      setStartTime(0)
       setCurrentBar(-1)
-      setCurrentRow(0)
-      setLeft(0)
-      setTop(62.5)
-      setTransitionTime(0)
 
       if (NODE_ENV === 'production') {
         // @ts-ignore
@@ -207,7 +175,6 @@ function App() {
     } else {
       setCurrentBar(0)
       const t = new Date().getTime()
-      setStartTime(t)
       ;((tmpTime) => {
         const tmpInterval = setInterval(() => {
           const deltaMS = new Date().getTime() - tmpTime
@@ -221,45 +188,6 @@ function App() {
   }, [icon])
 
   useEffect(() => {
-    if (currentBar < 0) {
-      setLeft(0)
-      setTransitionTime(0)
-      setTop(62.5)
-
-    } else {
-      if (currentBar === 0) {
-        setLeft(0)
-        setTransitionTime(0)
-      }
-
-      // note: 4 bars per line
-      const tmpCurrentRow = Math.floor(currentBar / 4)
-      setCurrentRow(tmpCurrentRow)
-    }
-  }, [currentBar])
-
-  useEffect(() => {
-    setLeft(0)
-    setTransitionTime(0)
-    setTop((currentRow) * 219.5 + 62.5)
-  }, [currentRow])
-
-  useEffect(() => {
-    if (left === 0 && icon === 'stop') {
-      const numRows = Math.ceil(bars.length / 4)
-      let numBarsInCurrentRow = (currentRow + 1) !== numRows ? 4 : bars.length % 4;
-      if (numBarsInCurrentRow === 0) {
-        numBarsInCurrentRow = 4
-      }
-      
-      // note: 300px per bar
-      setLeft(numBarsInCurrentRow * 300)
-      setTransitionTime(msPerBar*numBarsInCurrentRow)
-    }
-  }, [left, icon])
-
-  useEffect(() => {
-    console.log(`currentBar: ${currentBar}`)
     if (currentBar < 0) {
       return
     }
@@ -370,7 +298,6 @@ function App() {
               icon='upload' 
               title="load" 
               onClick={() => {
-                console.log('upload clicked')
                 //document.getElementById('file-input')?.click()
                 const downloadLink = document.createElement("input")
                 downloadLink.type = "file"
@@ -446,15 +373,11 @@ function App() {
         </InputsWrapper>
       </HeaderWrapper>
       <BarsWrapper>
-        <CurrentLocationMarker 
-            top={`${top}px`}
-            left={`${left}px`}
-            transitionDuration={`${transitionTime}ms`}
-        />
         {(bars as BarState[]).map((bar, idx) => (
           <BarAndSelectors
             key={idx}
             disableSelectors={icon === 'stop'}
+            isActive={currentBar === idx}
 
             musicKey={bar.musicKey}
             onKeyChange={(key: string) => { handleKeyChange(idx, key) }}

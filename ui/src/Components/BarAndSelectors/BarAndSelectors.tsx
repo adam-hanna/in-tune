@@ -18,6 +18,7 @@ const SelectorsWrapper = styled.div`
 
 export type BarAndSelectorsProps = {
   disableSelectors: boolean;
+  isActive: boolean;
 
   musicKey: string;
   onKeyChange: (key: string) => void;
@@ -34,6 +35,7 @@ export type BarAndSelectorsProps = {
 
 export const BarAndSelectors =({
   disableSelectors,
+  isActive,
   musicKey,
   onKeyChange,
   scale,
@@ -58,6 +60,7 @@ export const BarAndSelectors =({
         />
       </SelectorsWrapper>
       <Bar
+        isActive={isActive}
         hasClef={hasClef}
         hasRepeat={hasRepeat}
         showRemoveIcon={showRemoveIcon}
