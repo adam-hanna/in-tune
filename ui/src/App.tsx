@@ -9,6 +9,11 @@ import { BarAndSelectors } from './Components/BarAndSelectors'
 import { KeysToRootNoteMap } from './Keys'
 import { ScaleSelector } from './Components/Selectors/Scales'
 
+// @ts-ignore
+import LowClick from './media/Low_Seiko_SQ50.wav'
+// @ts-ignore
+import HighClick from './media/High_Seiko_SQ50.wav'
+
 const { NODE_ENV } = process.env
 
 interface HTMLInputEvent extends Event {
@@ -138,7 +143,7 @@ function App() {
   );
   const [tempo, setTempo] = useState(108)
   const [beatsPerBar, setBeatsPerBar] = useState(4)
-  const [msPerBar, setMSPerBar] = useState(0)
+  const [beatNumber, setBeatNumber] = useState(0)
 
   const [icon, setIcon] = useState('play')
   const [intrvl, setIntrvl] = useState(0)
@@ -155,17 +160,28 @@ function App() {
     dispatch({ idx, type: 'CHANGE_SCALE', data });
   };
 
-  useEffect(() => {
-    const tmpMSPerBeat = (60 * 1000) / tempo
-    const tmpMSPerBar = tmpMSPerBeat * beatsPerBar
+  const LowAudio = new Audio(LowClick)
+  const HighAudio = new Audio(HighClick)
 
-    setMSPerBar(tmpMSPerBar)
-  }, [tempo, beatsPerBar])
+  useEffect(() => {
+    const relativeBeat = (beatNumber % (bars.length * beatsPerBar))
+
+    if (beatNumber > 0) {
+      if (relativeBeat % beatsPerBar === 0) {
+        HighAudio.play()
+      } else {
+        LowAudio.play()
+      }
+    }
+
+    setCurrentBar(Math.floor(relativeBeat / beatsPerBar))
+  }, [beatNumber, beatsPerBar, bars])
 
   useEffect(() => {
     if (icon === 'play') {
       clearInterval(intrvl)
       setCurrentBar(-1)
+      setBeatNumber(0)
 
       if (NODE_ENV === 'production') {
         // @ts-ignore
@@ -174,16 +190,15 @@ function App() {
       }
     } else {
       setCurrentBar(0)
-      const t = new Date().getTime()
-      ;((tmpTime) => {
+      setBeatNumber(0)
+
+      const tmpMSPerBeat = (60 * 1000) / tempo
+      ;((msPerBeat) => {
         const tmpInterval = setInterval(() => {
-          const deltaMS = new Date().getTime() - tmpTime
-          const quotient = deltaMS / msPerBar
-          const tmpCurrentBar = Math.round(quotient)
-          setCurrentBar(tmpCurrentBar%bars.length)
-        }, msPerBar)
+          setBeatNumber(prevBeat => prevBeat + 1 )
+        }, msPerBeat)
         setIntrvl(tmpInterval)
-      })(t);
+      })(tmpMSPerBeat);
     }
   }, [icon])
 
@@ -362,6 +377,7 @@ function App() {
             name={icon} 
             size='huge' 
             onClick={() => {
+              HighAudio.play()
               if (icon === 'play') {
                 setIcon('stop')
               } else {
