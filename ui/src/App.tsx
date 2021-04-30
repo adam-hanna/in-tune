@@ -9,11 +9,6 @@ import { BarAndSelectors } from './Components/BarAndSelectors'
 import { KeysToRootNoteMap } from './Keys'
 import { ScaleSelector } from './Components/Selectors/Scales'
 
-// @ts-ignore
-import LowClick from './media/Low_Seiko_SQ50.wav'
-// @ts-ignore
-import HighClick from './media/High_Seiko_SQ50.wav'
-
 const { NODE_ENV } = process.env
 
 interface HTMLInputEvent extends Event {
@@ -160,8 +155,8 @@ function App() {
     dispatch({ idx, type: 'CHANGE_SCALE', data });
   };
 
-  const LowAudio = new Audio(LowClick)
-  const HighAudio = new Audio(HighClick)
+  const LowAudio = new Audio("https://in-tune-media.s3.amazonaws.com/Low_Seiko_SQ50.wav")
+  const HighAudio = new Audio("https://in-tune-media.s3.amazonaws.com/High_Seiko_SQ50.wav")
 
   useEffect(() => {
     const relativeBeat = (beatNumber % (bars.length * beatsPerBar))
